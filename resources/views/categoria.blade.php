@@ -57,6 +57,38 @@
 </head>
 
 <body>
+    <header style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+        <h1 style="margin:0;">Catalogo</h1>
+
+        <nav style="display:flex; gap:10px; align-items:center;">
+            @guest
+                <a href="{{ route('login') }}"
+                    style="padding:10px 16px; border:1px solid #e5e7eb; border-radius:10px; text-decoration:none;">
+                    Accedi
+                </a>
+                <a href="{{ route('register') }}"
+                    style="padding:10px 16px; border:1px solid #111827; background:#111827; color:#fff; border-radius:10px; text-decoration:none;">
+                    Registrati
+                </a>
+            @endguest
+
+            @auth
+                <span style="font-size:14px; color:#6b7280;">Ciao, {{ auth()->user()->name }}</span>
+                <a href="{{ route('dashboard') }}"
+                    style="padding:8px 12px; border:1px solid #e5e7eb; border-radius:10px; text-decoration:none;">
+                    Account
+                </a>
+                <form method="POST" action="{{ route('logout') }}" style="display:inline;">
+                    @csrf
+                    <button type="submit"
+                        style="padding:8px 12px; border:1px solid #ef4444; color:#ef4444; border-radius:10px; background:#fff;">
+                        Esci
+                    </button>
+                </form>
+            @endauth
+        </nav>
+    </header>
+
     <nav class="breadcrumb" style="margin-bottom:12px;">
         <a href="{{ route('catalogo') }}">Home</a> › <span class="muted">{{ $category->name }}</span>
     </nav>

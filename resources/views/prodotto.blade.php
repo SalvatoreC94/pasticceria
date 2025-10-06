@@ -65,8 +65,18 @@
         <p class="muted">Allergeni: {{ implode(', ', $product->allergens) }}</p>
     @endif
 
-    <!-- Placeholder carrello: lo agganciamo nel prossimo step -->
-    <button class="btn" title="In arrivo">Aggiungi al carrello (coming soon)</button>
+    <form method="POST" action="{{ route('cart.add') }}" style="margin-top:12px;">
+        @csrf
+        <input type="hidden" name="product_id" value="{{ $product->id }}">
+        <input type="number" name="qty" value="1" min="1" max="20"
+            style="width:80px; padding:8px; border:1px solid #e5e7eb; border-radius:10px;">
+        <button type="submit"
+            style="padding:10px 14px; border-radius:10px; border:1px solid #111827; background:#111827; color:#fff;">
+            Aggiungi al carrello
+        </button>
+    </form>
+
+
 </body>
 
 </html>
