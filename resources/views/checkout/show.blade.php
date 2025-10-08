@@ -56,7 +56,8 @@
 
         #error {
             color: #b91c1c;
-            margin-top: 10px
+            margin-top: 10px;
+            min-height: 1.5em
         }
     </style>
     <script src="https://js.stripe.com/v3/"></script>
@@ -78,7 +79,7 @@
                 <label>Email</label>
                 <input name="email" type="email" value="{{ auth()->user()->email ?? '' }}" required>
 
-                <label>Telefono</label>
+                <label>Telefono (opz.)</label>
                 <input name="phone" type="tel" value="{{ auth()->user()->phone ?? '' }}">
 
                 <label>Via</label>
@@ -89,14 +90,14 @@
 
                 <label>CAP</label>
                 <input name="address[cap]" value="{{ auth()->user()->shipping_address['cap'] ?? '' }}" required
-                    pattern="\d{5}">
+                    pattern="\d{5}" title="CAP a 5 cifre">
 
                 <label>Città</label>
                 <input name="address[citta]" value="{{ auth()->user()->shipping_address['citta'] ?? '' }}" required>
 
-                <label>Prov.</label>
+                <label>Prov. (2 lettere, es. NA)</label>
                 <input name="address[prov]" value="{{ auth()->user()->shipping_address['prov'] ?? '' }}" required
-                    maxlength="2">
+                    maxlength="2" pattern="[A-Za-z]{2}" title="Due lettere">
 
                 <div id="payment-element" style="margin:16px 0;"></div>
 
@@ -165,7 +166,7 @@
                         body
                     });
 
-                    // Prova a leggere JSON; se è HTML (419/500), mostra messaggio generico
+                    // Prova JSON; se è HTML (419/500), mostra messaggio chiaro
                     let data;
                     try {
                         data = await res.json();
@@ -177,8 +178,18 @@
                         throw new Error('Errore server. Riprova tra un attimo.');
                     }
 
+                    // Estrai il primo messaggio utile in caso di errore
                     if (!res.ok || !data?.clientSecret) {
-                        throw new Error(data?.error || 'Errore in checkout.');
+                        const firstValidation =
+                            (data?.errors && Object.values(data.errors)[0]?.[
+                            0]) // primo errore Laravel (422)
+                            ||
+                            data?.message // messaggio Laravel
+                            ||
+                            data?.error // nostro messaggio lato server
+                            ||
+                            'Errore in checkout.';
+                        throw new Error(firstValidation);
                     }
 
                     clientSecret = data.clientSecret;
@@ -192,7 +203,7 @@
                         paymentElement.mount('#payment-element');
                     }
 
-                    // 3) OBBLIGATORIO PRIMA DI confirmPayment
+                    // 3) Obbligatorio prima di confirmPayment: raccoglie/valida i dati di pagamento
                     const {
                         error: submitError
                     } = await elements.submit();
@@ -211,8 +222,9 @@
                         }
                     });
 
-                    if (error) throw error;
-
+                    if (error) {
+                        throw error;
+                    }
                 } catch (err) {
                     errorEl.textContent = err?.message || 'Errore imprevisto.';
                     payBtn.disabled = false;

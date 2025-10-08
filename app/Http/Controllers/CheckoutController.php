@@ -4,97 +4,160 @@ namespace App\Http\Controllers;
 
 use App\Models\Cart;
 use App\Models\Order;
-use App\Services\ShippingService;
+use App\Models\OrderItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Stripe\StripeClient;
 
 class CheckoutController extends Controller
 {
-    public function show()
+    /**
+     * Mostra la pagina di checkout con riepilogo carrello.
+     */
+    public function show(Request $request)
     {
         $cart = Cart::fromSession();
-        abort_if(!$cart || $cart->items()->count() === 0, 404);
+        $items = $cart?->items()->with('product')->get() ?? collect();
 
-        $items = $cart->items()->with('product')->get();
-        $subtotal = $items->sum('total_cents');
+        if ($items->isEmpty()) {
+            return redirect()->route('cart.show')->withErrors('Il carrello è vuoto.');
+        }
 
-        $shipping = app(ShippingService::class)->fee($subtotal);
-        $total = $subtotal + $shipping;
+        $subtotal = (int) $items->sum('total_cents');
+        $shipping = $this->calcShipping($subtotal);
+        $total    = $subtotal + $shipping;
 
-        return view('checkout.show', compact('cart','items','subtotal','shipping','total'));
+        return view('checkout.show', [
+            'items'    => $items,
+            'subtotal' => $subtotal,
+            'shipping' => $shipping,
+            'total'    => $total,
+        ]);
     }
 
-    public function createOrder(Request $r, ShippingService $ship)
+    /**
+     * Valida i dati, crea Order + OrderItems e apre un PaymentIntent Stripe.
+     * Ritorna JSON: { clientSecret, orderCode }
+     */
+    public function createOrder(Request $request)
     {
-        $data = $r->validate([
-            'email'          => 'required|email',
-            'name'           => 'required|string|max:120',
-            'phone'          => 'nullable|string|max:30',
-            'address.via'    => 'required|string|max:140',
-            'address.civico' => 'required|string|max:20',
-            'address.cap'    => 'required|regex:/^\d{5}$/',
-            'address.citta'  => 'required|string|max:100',
-            'address.prov'   => 'required|string|size:2',
+        // 1) Validazione: indirizzo OBBLIGATORIO qui (registrazione leggera)
+        $data = $request->validate([
+            'name'            => ['required','string','max:255'],
+            'email'           => ['required','email','max:255'],
+            'phone'           => ['nullable','string','max:30'],
+            'address.via'     => ['required','string','max:140'],
+            'address.civico'  => ['required','string','max:20'],
+            'address.cap'     => ['required','regex:/^\d{5}$/'],
+            'address.citta'   => ['required','string','max:100'],
+            'address.prov'    => ['required','string','size:2'],
         ]);
 
+        // 2) Carrello & totali
         $cart = Cart::fromSession();
-        abort_if(!$cart || $cart->items()->count() === 0, 400, 'Carrello vuoto');
+        $items = $cart?->items()->with('product')->get() ?? collect();
+        if ($items->isEmpty()) {
+            return response()->json(['error' => 'Carrello vuoto.'], 422);
+        }
 
-        $items = $cart->items()->with('product')->get();
-
-        // Validazione stock just-in-time
+        // opzionale: controllo stock
         foreach ($items as $it) {
             $p = $it->product;
+            if (! $p || ! $p->is_visible) {
+                return response()->json(['error' => 'Uno dei prodotti non è disponibile.'], 422);
+            }
             if (!is_null($p->stock) && $it->qty > $p->stock) {
-                return response()->json(['error' => 'Stock insufficiente per '.$p->name], 422);
+                return response()->json(['error' => "Stock insufficiente per {$p->name}."], 422);
             }
         }
 
-        $subtotal = $items->sum('total_cents');
-        $shipping = $ship->fee($subtotal);
+        $subtotal = (int) $items->sum('total_cents');
+        $shipping = $this->calcShipping($subtotal);
         $total    = $subtotal + $shipping;
 
+        // 3) Crea ordine
         $order = Order::create([
-            'user_id'              => auth()->id(),
-            'code'                 => Str::upper(Str::random(8)),
-            'email'                => $data['email'],
-            'customer_name'        => $data['name'],
-            'phone'                => $data['phone'] ?? null,
-            'delivery_address'     => $data['address'],
-            'delivery_fee_cents'   => $shipping,
-            'subtotal_cents'       => $subtotal,
-            'total_cents'          => $total,
-            'currency'             => env('APP_CURRENCY', 'EUR'),
-            'payment_status'       => 'pending',
-            'order_status'         => 'pending',
+            'user_id'             => auth()->id(),
+            'code'                => strtoupper(Str::random(10)),
+            'email'               => $data['email'],
+            'customer_name'       => $data['name'],
+            'phone'               => $data['phone'] ?? null,
+            'delivery_address'    => $data['address'], // JSON
+            'delivery_fee_cents'  => $shipping,
+            'subtotal_cents'      => $subtotal,
+            'discount_cents'      => 0,
+            'total_cents'         => $total,
+            'currency'            => 'EUR',
+            'payment_status'      => 'pending',
+            'order_status'        => 'new',
+            'courier_name'        => 'Corriere',
+            'tracking_code'       => null,
+            'stripe_payment_intent' => null,
         ]);
 
+        // 4) Righe ordine
         foreach ($items as $it) {
-            $order->items()->create([
-                'product_id'            => $it->product_id,
-                'product_name_snapshot' => $it->product->name,
-                'qty'                   => $it->qty,
-                'unit_price_cents'      => $it->unit_price_cents,
-                'total_cents'           => $it->total_cents,
+            OrderItem::create([
+                'order_id'            => $order->id,
+                'product_id'          => $it->product_id,
+                'product_name_snapshot'=> $it->product->name,
+                'qty'                 => $it->qty,
+                'unit_price_cents'    => $it->unit_price_cents,
+                'total_cents'         => $it->total_cents,
             ]);
         }
 
-        $stripe = new StripeClient(env('STRIPE_SECRET'));
+        // 5) PaymentIntent Stripe
+        try {
+            $secret = config('services.stripe.secret') ?? env('STRIPE_SECRET');
+            if (!$secret) {
+                throw new \RuntimeException('Stripe secret non configurato.');
+            }
 
-        $pi = $stripe->paymentIntents->create([
-            'amount'                     => $total,
-            'currency'                   => 'eur',
-            'receipt_email'              => $order->email,
-            'metadata'                   => ['order_code' => $order->code],
-            'automatic_payment_methods'  => ['enabled' => true],
-        ]);
+            $stripe = new StripeClient($secret);
+            $pi = $stripe->paymentIntents->create([
+                'amount'   => $total,       // centesimi
+                'currency' => 'eur',
+                'receipt_email' => $order->email,
+                'metadata' => [
+                    'order_id'   => (string) $order->id,
+                    'order_code' => $order->code,
+                ],
+                'automatic_payment_methods' => ['enabled' => true],
+            ]);
 
-        $order->update(['stripe_payment_intent' => $pi->id]);
+            $order->update(['stripe_payment_intent' => $pi->id]);
+
+        } catch (\Throwable $e) {
+            // fall back: segna fallito e torna errore leggibile
+            $order->update(['payment_status' => 'failed']);
+            return response()->json(['error' => 'Stripe error: '.$e->getMessage()], 500);
+        }
+
+        // 6) (facoltativo) scala stock
+        foreach ($items as $it) {
+            $p = $it->product;
+            if (!is_null($p->stock)) {
+                $p->decrement('stock', $it->qty);
+            }
+        }
+
+        // 7) Svuota carrello
+        $cart->items()->delete();
 
         return response()->json([
             'clientSecret' => $pi->client_secret,
             'orderCode'    => $order->code,
         ]);
+    }
+
+    /**
+     * Spedizione: 10€ sotto 69€, gratis da 69€ in su (configurabile da .env).
+     */
+    private function calcShipping(int $subtotalCents): int
+    {
+        $base      = (int) env('SHIPPING_BASE_CENTS', 1000);     // 10,00 €
+        $threshold = (int) env('FREE_SHIPPING_THRESHOLD_CENTS', 6900); // 69,00 €
+        return $subtotalCents >= $threshold ? 0 : $base;
     }
 }

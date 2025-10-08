@@ -7,8 +7,7 @@ use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rules;
+use Illuminate\Validation\Rules\Password;
 
 class RegisteredUserController extends Controller
 {
@@ -20,28 +19,21 @@ class RegisteredUserController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name'                  => ['required', 'string', 'max:255'],
-            'email'                 => ['required', 'string', 'email', 'max:255', 'unique:'.User::class],
-            'phone'                 => ['nullable', 'string', 'max:30'],
-            'address.via'           => ['required', 'string', 'max:140'],
-            'address.civico'        => ['required', 'string', 'max:20'],
-            'address.cap'           => ['required', 'regex:/^\d{5}$/'],
-            'address.citta'         => ['required', 'string', 'max:100'],
-            'address.prov'          => ['required', 'string', 'size:2'],
-            'password'              => ['required', 'confirmed', Rules\Password::defaults()],
+            'name'     => ['required','string','max:255'],
+            'email'    => ['required','string','lowercase','email','max:255','unique:'.User::class],
+            'password' => ['required','confirmed', Password::defaults()],
         ]);
 
         $user = User::create([
-            'name'             => $data['name'],
-            'email'            => $data['email'],
-            'phone'            => $data['phone'] ?? null,
-            'shipping_address' => $data['address'],
-            'password'         => Hash::make($data['password']),
+            'name'     => $data['name'],
+            'email'    => $data['email'],
+            'password' => bcrypt($data['password']),
         ]);
 
         event(new Registered($user));
+
         Auth::login($user);
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(route('home', absolute: false));
     }
 }
