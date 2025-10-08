@@ -8,21 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('products', function (Blueprint $t) {
-            $t->id();
-            $t->foreignId('category_id')->constrained()->cascadeOnDelete();
-            $t->string('name');
-            $t->string('slug')->unique();
-            $t->text('description')->nullable();
-            $t->integer('price_cents');
-            $t->integer('weight_grams')->default(0);
-            $t->boolean('is_visible')->default(true);
-            $t->boolean('is_made_to_order')->default(false);
-            $t->json('allergens')->nullable();
-            $t->integer('lead_time_hours')->default(0);
-            $t->integer('stock')->nullable();
-            $t->string('image_path')->nullable();
-            $t->timestamps();
+        Schema::create('products', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 160);
+            $table->string('slug', 180)->unique();
+            $table->string('sku', 80)->unique();
+            $table->unsignedInteger('price_cents'); // es. 1299 = €12,99
+            $table->unsignedInteger('stock_qty')->default(0);
+            $table->boolean('is_visible')->default(true);
+            $table->json('images')->nullable();
+            $table->text('description')->nullable();
+            $table->timestamps();
+
+            $table->index(['is_visible', 'stock_qty']);
         });
     }
 

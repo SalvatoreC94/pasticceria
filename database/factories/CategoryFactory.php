@@ -3,19 +3,16 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Category>
- */
-// database/factories/CategoryFactory.php
-// database/factories/CategoryFactory.php
-class CategoryFactory extends Factory {
-    protected $model = Category::class;
-    public function definition(){
-        $name = $this->faker->unique()->randomElement(['Cornetteria','Torte','Mignon','Biscotti','Salati']);
-        return ['name'=>$name,'slug'=>Str::slug($name),'description'=>$this->faker->sentence(),'is_visible'=>true];
+class CategoryFactory extends Factory
+{
+    public function definition(): array {
+        $name = $this->faker->unique()->words(2, true);
+        return [
+            'name' => ucfirst($name),
+            'slug' => Str::slug($name),
+            'is_visible' => true,
+        ];
     }
 }
-
-
-

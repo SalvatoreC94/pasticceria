@@ -2,37 +2,28 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Product extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'category_id',
-        'name',
-        'slug',
-        'description',
-        'price_cents',
-        'weight_grams',
-        'is_visible',
-        'is_made_to_order',
-        'allergens',
-        'lead_time_hours',
-        'stock',
-        'image_path',
+        'name','slug','sku','price_cents','stock_qty','is_visible','images','description'
     ];
 
     protected $casts = [
-        'allergens'        => 'array',
-        'is_visible'       => 'boolean',
-        'is_made_to_order' => 'boolean',
+        'is_visible' => 'boolean',
+        'images'     => 'array',
     ];
-public function getRouteKeyName(): string { return 'slug'; }
 
-    public function category()
-    {
-        return $this->belongsTo(Category::class);
+    public function categories() {
+        return $this->belongsToMany(Category::class)->withTimestamps();
+    }
+
+    // Accessor comodo per Vue
+    public function getPriceFormattedAttribute(): string {
+        return number_format($this->price_cents / 100, 2, ',', '.');
     }
 }
