@@ -5,6 +5,7 @@ use App\Models\Product;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CheckoutController;
+use App\Http\Controllers\StripeWebhookController;
 
 // Root: gli admin vanno al pannello; tutti gli altri al catalogo pubblico
 Route::get('/', function () {
@@ -57,9 +58,12 @@ Route::prefix('carrello')->group(function () {
     Route::get('/', [CartController::class, 'show'])->name('cart.show');
 });
 
-// Checkout
 Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout.show');
-Route::post('/checkout', [CheckoutController::class, 'createOrder'])->name('checkout.create');
+Route::post('/checkout/create-order', [CheckoutController::class, 'createOrder'])->name('checkout.create');
+
+// Webhook Stripe (invocabile)
+Route::post('/stripe/webhook', StripeWebhookController::class);
+
 
 // Thank you
 Route::view('/ordine/confermato', 'ordine-confermato')->name('order.thankyou');

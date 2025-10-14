@@ -95,17 +95,21 @@ class CheckoutController extends Controller
             'stripe_payment_intent' => null,
         ]);
 
-        // 4) Righe ordine
-        foreach ($items as $it) {
-            OrderItem::create([
-                'order_id'            => $order->id,
-                'product_id'          => $it->product_id,
-                'product_name_snapshot'=> $it->product->name,
-                'qty'                 => $it->qty,
-                'unit_price_cents'    => $it->unit_price_cents,
-                'total_cents'         => $it->total_cents,
-            ]);
-        }
+        // 4) Righe ordine (snapshot nome e prezzi al momento dell'acquisto)
+foreach ($items as $it) {
+    $product = $it->product; // già eager loaded
+    $unit    = $it->unit_price_cents ?? $product->price_cents;  // fallback allistino
+    $line    = $it->total_cents       ?? ($unit * $it->qty);
+
+    \App\Models\OrderItem::create([
+        'order_id'              => $order->id,
+        'product_id'            => $it->product_id,
+        'product_name_snapshot' => $product->name,
+        'unit_price_cents'      => $unit,
+        'total_cents'           => $line,
+        'qty'                   => $it->qty,
+    ]);
+}
 
         // 5) PaymentIntent Stripe
         try {
