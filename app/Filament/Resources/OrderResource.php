@@ -14,9 +14,12 @@ use Filament\Resources\Resource;
 class OrderResource extends Resource
 {
     protected static ?string $model = Order::class;
-    protected static ?string $navigationIcon = 'heroicon-o-receipt-percent';
-    protected static ?string $navigationGroup = 'Catalogo';
+
+    protected static ?string $navigationIcon  = 'heroicon-o-receipt-percent';
+    protected static ?string $navigationGroup = 'Vendite';
     protected static ?string $navigationLabel = 'Ordini';
+    protected static ?string $pluralModelLabel = 'Ordini';
+    protected static ?string $modelLabel = 'Ordine';
 
     public static function form(Form $form): Form
     {
@@ -24,81 +27,112 @@ class OrderResource extends Resource
             Forms\Components\Section::make('Dati ordine')->schema([
                 Forms\Components\TextInput::make('code')->label('Codice')->disabled(),
                 Forms\Components\TextInput::make('customer_name')->label('Cliente')->disabled(),
-                Forms\Components\TextInput::make('email')->email()->disabled(),
-                Forms\Components\TextInput::make('phone')->tel()->disabled(),
-                Forms\Components\Textarea::make('delivery_address')->label('Indirizzo')->disabled()
-                    ->formatStateUsing(fn ($s) => is_array($s) ? json_encode($s, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE) : $s),
-            ])->columns(2),
+                Forms\Components\TextInput::make('email')->disabled(),
+                Forms\Components\TextInput::make('phone')->disabled(),
 
-            Forms\Components\Section::make('Totali')->schema([
-                Forms\Components\TextInput::make('subtotal_cents')->numeric()->label('Subtotale')->disabled(),
-                Forms\Components\TextInput::make('delivery_fee_cents')->numeric()->label('Spedizione')->disabled(),
-                Forms\Components\TextInput::make('discount_cents')->numeric()->label('Sconto')->disabled(),
-                Forms\Components\TextInput::make('total_cents')->numeric()->label('Totale')->disabled(),
-                Forms\Components\TextInput::make('currency')->disabled(),
-            ])->columns(5),
+                Forms\Components\Textarea::make('delivery_address')
+                    ->label('Indirizzo di consegna')
+                    ->rows(6)
+                    ->disabled()
+                    ->formatStateUsing(fn ($state) =>
+                        is_array($state)
+                            ? json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                            : (string) $state
+                    ),
 
-            Forms\Components\Section::make('Stati')->schema([
-                Forms\Components\Select::make('order_status')->label('Stato ordine')->options([
-                    'new' => 'Nuovo',
-                    'processing' => 'In lavorazione',
-                    'shipped' => 'Spedito',
-                    'delivered' => 'Consegnato',
-                    'canceled' => 'Annullato',
-                ])->required(),
-                Forms\Components\Select::make('payment_status')->label('Pagamento')->disabled()->options([
-                    'pending' => 'In attesa',
-                    'paid' => 'Pagato',
-                    'failed' => 'Fallito',
-                    'refunded' => 'Rimborsato',
-                ]),
-                Forms\Components\TextInput::make('stripe_payment_intent')->label('PI')->disabled(),
-            ])->columns(3),
+                Forms\Components\TextInput::make('delivery_fee_cents')
+                    ->label('Spedizione')
+                    ->disabled()
+                    ->suffix('€')
+                    ->formatStateUsing(fn ($state) => number_format((($state ?? 0) / 100), 2, ',', '.')),
 
-            Forms\Components\Section::make('Spedizione')->schema([
+                Forms\Components\TextInput::make('subtotal_cents')
+                    ->label('Subtotale')
+                    ->disabled()
+                    ->suffix('€')
+                    ->formatStateUsing(fn ($state) => number_format((($state ?? 0) / 100), 2, ',', '.')),
+
+                Forms\Components\TextInput::make('total_cents')
+                    ->label('Totale')
+                    ->disabled()
+                    ->suffix('€')
+                    ->formatStateUsing(fn ($state) => number_format((($state ?? 0) / 100), 2, ',', '.')),
+
+                Forms\Components\Select::make('payment_status')
+                    ->label('Pagamento')
+                    ->options([
+                        'pending'  => 'pending',
+                        'paid'     => 'paid',
+                        'failed'   => 'failed',
+                        'refunded' => 'refunded',
+                    ])
+                    ->required(),
+
+                Forms\Components\Select::make('order_status')
+                    ->label('Stato ordine')
+                    ->options([
+                        'new'        => 'new',
+                        'processing' => 'processing',
+                        'shipped'    => 'shipped',
+                        'delivered'  => 'delivered',
+                        'canceled'   => 'canceled',
+                    ])
+                    ->required(),
+
                 Forms\Components\TextInput::make('courier_name')->label('Corriere'),
                 Forms\Components\TextInput::make('tracking_code')->label('Tracking'),
+                Forms\Components\TextInput::make('stripe_payment_intent')->label('Stripe PI')->disabled(),
             ])->columns(2),
         ]);
     }
 
     public static function table(Table $table): Table
     {
-        return $table->columns([
-                Tables\Columns\TextColumn::make('code')->label('Codice')->searchable()->copyable(),
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('code')->label('Codice')->sortable()->searchable(),
                 Tables\Columns\TextColumn::make('customer_name')->label('Cliente')->searchable(),
-                Tables\Columns\TextColumn::make('email')->toggleable(),
                 Tables\Columns\TextColumn::make('total_cents')->label('Totale')->money('EUR', divideBy: 100)->sortable(),
-                Tables\Columns\BadgeColumn::make('payment_status')->label('Pagamento')->colors([
-                    'warning' => 'pending',
-                    'success' => 'paid',
-                    'danger'  => 'failed',
-                    'gray'    => 'refunded',
-                ])->sortable(),
-                Tables\Columns\BadgeColumn::make('order_status')->label('Ordine')->colors([
-                    'info'    => 'new',
-                    'warning' => 'processing',
-                    'primary' => 'shipped',
-                    'success' => 'delivered',
-                    'danger'  => 'canceled',
-                ])->sortable(),
+                Tables\Columns\TextColumn::make('payment_status')->label('Pagamento')
+                    ->badge()
+                    ->color(fn (string $state) => match ($state) {
+                        'pending'  => 'warning',
+                        'paid'     => 'success',
+                        'failed'   => 'danger',
+                        'refunded' => 'gray',
+                        default    => 'gray',
+                    })
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('order_status')->label('Stato')
+                    ->badge()
+                    ->color(fn (string $state) => match ($state) {
+                        'new'        => 'warning',
+                        'processing' => 'info',
+                        'shipped'    => 'primary',
+                        'delivered'  => 'success',
+                        'canceled'   => 'danger',
+                        default      => 'gray',
+                    })
+                    ->sortable(),
                 Tables\Columns\TextColumn::make('created_at')->dateTime('d/m/Y H:i')->label('Creato')->sortable(),
             ])
-            ->actions([Tables\Actions\ViewAction::make(), Tables\Actions\EditAction::make()])
-            ->bulkActions([Tables\Actions\DeleteBulkAction::make()]);
+            ->actions([
+                Tables\Actions\EditAction::make()->label('Apri'),
+            ]);
     }
 
     public static function getRelations(): array
     {
-        return [OrderItemsRelationManager::class];
+        return [
+            OrderItemsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
     {
         return [
-            'index'  => Pages\ListOrders::route('/'),
-            'create' => Pages\CreateOrder::route('/create'), // lascia pure, o toglila se non vuoi creare manualmente
-            'edit'   => Pages\EditOrder::route('/{record}/edit'),
+            'index' => Pages\ListOrders::route('/'),
+            'edit'  => Pages\EditOrder::route('/{record}/edit'),
         ];
     }
 }

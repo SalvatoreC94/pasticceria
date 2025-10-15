@@ -15,9 +15,9 @@ class Order extends Model
         'stripe_payment_intent',
     ];
 
-    protected $casts = [
-        'delivery_address' => 'array',
-    ];
+ protected $casts = [
+    'delivery_address' => 'array',
+];
 
     public function items()
     {

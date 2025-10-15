@@ -6,9 +6,11 @@ use App\Filament\Resources\ProductResource\Pages;
 use App\Models\Product;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Set;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Resources\Resource;
+use Illuminate\Support\Str;
 
 class ProductResource extends Resource
 {
@@ -24,7 +26,7 @@ class ProductResource extends Resource
                 ->label('Nome')
                 ->required()
                 ->live()
-                ->afterStateUpdated(fn ($state, callable $set) => $set('slug', \Str::slug($state))),
+                ->afterStateUpdated(fn (string $state, Set $set) => $set('slug', Str::slug($state))),
             Forms\Components\TextInput::make('slug')
                 ->label('Slug')
                 ->required()
@@ -34,11 +36,29 @@ class ProductResource extends Resource
                 ->required()
                 ->unique(ignoreRecord: true),
             Forms\Components\Textarea::make('description')->label('Descrizione'),
-            Forms\Components\TextInput::make('price_cents')->label('Prezzo (centesimi)')->numeric()->minValue(0)->required(),
-            Forms\Components\TextInput::make('stock_qty')->label('Q.tà')->numeric()->minValue(0)->required(),
+            Forms\Components\TextInput::make('price_cents')
+                ->label('Prezzo (centesimi)')
+                ->numeric()
+                ->minValue(0)
+                ->required(),
+            Forms\Components\TextInput::make('stock_qty')
+                ->label('Q.tà')
+                ->numeric()
+                ->minValue(0)
+                ->required(),
             Forms\Components\Toggle::make('is_visible')->label('Visibile')->default(true),
-            Forms\Components\FileUpload::make('images')->label('Immagini')->image()->multiple(),
-            Forms\Components\Select::make('categories')->label('Categorie')->relationship('categories', 'name')->multiple()->preload(),
+
+            // se 'images' è JSON nel db, questo va bene; se usi storage pubblico puoi aggiungere ->disk('public')->directory('products')
+            Forms\Components\FileUpload::make('images')
+                ->label('Immagini')
+                ->image()
+                ->multiple(),
+
+            Forms\Components\Select::make('categories')
+                ->label('Categorie')
+                ->relationship('categories', 'name')
+                ->multiple()
+                ->preload(),
         ])->columns(3);
     }
 

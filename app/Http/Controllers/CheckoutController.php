@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Stripe\StripeClient;
 
@@ -16,7 +18,7 @@ class CheckoutController extends Controller
      */
     public function show(Request $request)
     {
-        $cart = Cart::fromSession();
+        $cart  = Cart::fromSession();
         $items = $cart?->items()->with('product')->get() ?? collect();
 
         if ($items->isEmpty()) {
@@ -43,30 +45,53 @@ class CheckoutController extends Controller
     {
         // 1) Validazione: indirizzo OBBLIGATORIO qui (registrazione leggera)
         $data = $request->validate([
-            'name'            => ['required','string','max:255'],
-            'email'           => ['required','email','max:255'],
-            'phone'           => ['nullable','string','max:30'],
-            'address.via'     => ['required','string','max:140'],
-            'address.civico'  => ['required','string','max:20'],
-            'address.cap'     => ['required','regex:/^\d{5}$/'],
-            'address.citta'   => ['required','string','max:100'],
-            'address.prov'    => ['required','string','size:2'],
+            'name'            => ['required', 'string', 'max:255'],
+            'email'           => ['required', 'email', 'max:255'],
+            'phone'           => ['nullable', 'string', 'max:30'],
+            'address.via'     => ['required', 'string', 'max:140'],
+            'address.civico'  => ['required', 'string', 'max:20'],
+            'address.cap'     => ['required', 'regex:/^\d{5}$/'],
+            'address.citta'   => ['required', 'string', 'max:100'],
+            'address.prov'    => ['required', 'string', 'size:2'],
         ]);
 
-        // 2) Carrello & totali
-        $cart = Cart::fromSession();
+        // 2) Crea/recupera utente se non autenticato (solo campi esistenti)
+        $userId = auth()->id();
+        if (!$userId) {
+            $user = User::firstOrCreate(
+                ['email' => $data['email']],
+                [
+                    'name'     => $data['name'],
+                    'password' => bcrypt(Str::random(16)),
+                    // se hai la colonna 'phone' in users, puoi sbloccarla:
+                    // 'phone' => $data['phone'] ?? null,
+                ]
+            );
+            $userId = $user->id;
+
+            // invia link per impostare password
+            try {
+                Password::sendResetLink(['email' => $user->email]);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        // 3) Carrello & totali
+        $cart  = Cart::fromSession();
         $items = $cart?->items()->with('product')->get() ?? collect();
+
         if ($items->isEmpty()) {
             return response()->json(['error' => 'Carrello vuoto.'], 422);
         }
 
-        // opzionale: controllo stock
+        // Controllo disponibilità (usa stock_qty)
         foreach ($items as $it) {
             $p = $it->product;
-            if (! $p || ! $p->is_visible) {
+            if (!$p || !$p->is_visible) {
                 return response()->json(['error' => 'Uno dei prodotti non è disponibile.'], 422);
             }
-            if (!is_null($p->stock) && $it->qty > $p->stock) {
+            if (!is_null($p->stock_qty) && $it->qty > $p->stock_qty) {
                 return response()->json(['error' => "Stock insufficiente per {$p->name}."], 422);
             }
         }
@@ -75,43 +100,43 @@ class CheckoutController extends Controller
         $shipping = $this->calcShipping($subtotal);
         $total    = $subtotal + $shipping;
 
-        // 3) Crea ordine
+        // 4) Crea ordine
         $order = Order::create([
-            'user_id'             => auth()->id(),
-            'code'                => strtoupper(Str::random(10)),
-            'email'               => $data['email'],
-            'customer_name'       => $data['name'],
-            'phone'               => $data['phone'] ?? null,
-            'delivery_address'    => $data['address'], // JSON
-            'delivery_fee_cents'  => $shipping,
-            'subtotal_cents'      => $subtotal,
-            'discount_cents'      => 0,
-            'total_cents'         => $total,
-            'currency'            => 'EUR',
-            'payment_status'      => 'pending',
-            'order_status'        => 'new',
-            'courier_name'        => 'Corriere',
-            'tracking_code'       => null,
+            'user_id'               => $userId,
+            'code'                  => strtoupper(Str::random(10)),
+            'email'                 => $data['email'],
+            'customer_name'         => $data['name'],
+            'phone'                 => $data['phone'] ?? null,
+            'delivery_address'      => $data['address'], // JSON
+            'delivery_fee_cents'    => $shipping,
+            'subtotal_cents'        => $subtotal,
+            'discount_cents'        => 0,
+            'total_cents'           => $total,
+            'currency'              => 'EUR',
+            'payment_status'        => 'pending',
+            'order_status'          => 'new',
+            'courier_name'          => 'Corriere',
+            'tracking_code'         => null,
             'stripe_payment_intent' => null,
         ]);
 
-        // 4) Righe ordine (snapshot nome e prezzi al momento dell'acquisto)
-foreach ($items as $it) {
-    $product = $it->product; // già eager loaded
-    $unit    = $it->unit_price_cents ?? $product->price_cents;  // fallback allistino
-    $line    = $it->total_cents       ?? ($unit * $it->qty);
+        // 5) Righe ordine (snapshot nome e prezzi al momento dell'acquisto)
+        foreach ($items as $it) {
+            $product = $it->product; // eager loaded
+            $unit    = $it->unit_price_cents ?? $product->price_cents; // fallback listino
+            $line    = $it->total_cents       ?? ($unit * $it->qty);
 
-    \App\Models\OrderItem::create([
-        'order_id'              => $order->id,
-        'product_id'            => $it->product_id,
-        'product_name_snapshot' => $product->name,
-        'unit_price_cents'      => $unit,
-        'total_cents'           => $line,
-        'qty'                   => $it->qty,
-    ]);
-}
+            OrderItem::create([
+                'order_id'              => $order->id,
+                'product_id'            => $it->product_id,
+                'product_name_snapshot' => $product->name,
+                'unit_price_cents'      => $unit,
+                'total_cents'           => $line,
+                'qty'                   => $it->qty,
+            ]);
+        }
 
-        // 5) PaymentIntent Stripe
+        // 6) PaymentIntent Stripe
         try {
             $secret = config('services.stripe.secret') ?? env('STRIPE_SECRET');
             if (!$secret) {
@@ -131,22 +156,21 @@ foreach ($items as $it) {
             ]);
 
             $order->update(['stripe_payment_intent' => $pi->id]);
-
         } catch (\Throwable $e) {
             // fall back: segna fallito e torna errore leggibile
             $order->update(['payment_status' => 'failed']);
-            return response()->json(['error' => 'Stripe error: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Stripe error: ' . $e->getMessage()], 500);
         }
 
-        // 6) (facoltativo) scala stock
+        // 7) Scala stock (usa stock_qty)
         foreach ($items as $it) {
             $p = $it->product;
-            if (!is_null($p->stock)) {
-                $p->decrement('stock', $it->qty);
+            if (!is_null($p->stock_qty)) {
+                $p->decrement('stock_qty', $it->qty);
             }
         }
 
-        // 7) Svuota carrello
+        // 8) Svuota carrello
         $cart->items()->delete();
 
         return response()->json([
@@ -160,7 +184,7 @@ foreach ($items as $it) {
      */
     private function calcShipping(int $subtotalCents): int
     {
-        $base      = (int) env('SHIPPING_BASE_CENTS', 1000);     // 10,00 €
+        $base      = (int) env('SHIPPING_BASE_CENTS', 1000);          // 10,00 €
         $threshold = (int) env('FREE_SHIPPING_THRESHOLD_CENTS', 6900); // 69,00 €
         return $subtotalCents >= $threshold ? 0 : $base;
     }

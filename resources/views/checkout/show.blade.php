@@ -140,98 +140,103 @@
         </div>
     </div>
 
-    <script>
-        (function() {
-            const stripe = Stripe("{{ config('services.stripe.key', env('STRIPE_KEY')) }}");
-            const form = document.getElementById('checkout-form');
-            const payBtn = document.getElementById('pay-btn');
-            const errorEl = document.getElementById('error');
+   <script>
+(function() {
+    const stripe = Stripe("{{ config('services.stripe.key', env('STRIPE_KEY')) }}");
+    const form = document.getElementById('checkout-form');
+    const payBtn = document.getElementById('pay-btn');
+    const errorEl = document.getElementById('error');
+    const returnUrl = "{{ url('/checkout/thank-you') }}"; // assicurati che esista questa rotta/pagina
 
-            let elements, clientSecret;
+    let elements = null;
+    let clientSecret = null;
+    let phase = 'init'; // init -> mounted -> confirming
 
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                payBtn.disabled = true;
-                errorEl.textContent = '';
+    function setBusy(b) {
+        payBtn.disabled = b;
+        payBtn.style.opacity = b ? .6 : 1;
+    }
+    function fail(e) {
+        console.error(e);
+        errorEl.textContent = (e && e.message) ? e.message : String(e || 'Errore');
+        setBusy(false);
+    }
 
+    payBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        errorEl.textContent = '';
+
+        try {
+            // 1) PRIMO CLICK → crea ordine + monta Element, poi STOP (l'utente inserisce i dati)
+            if (phase === 'init') {
+                setBusy(true);
+
+                const body = new FormData(form);
+                const res = await fetch(form.action, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body
+                });
+
+                let data;
                 try {
-                    // 1) Crea ordine + PaymentIntent
-                    const body = new FormData(form);
-                    const res = await fetch(form.action, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                            'Accept': 'application/json'
-                        },
-                        body
-                    });
-
-                    // Prova JSON; se è HTML (419/500), mostra messaggio chiaro
-                    let data;
-                    try {
-                        data = await res.json();
-                    } catch {
-                        const text = await res.text();
-                        if (text && text.includes('Page Expired')) {
-                            throw new Error('Sessione scaduta (419). Ricarica la pagina e riprova.');
-                        }
-                        throw new Error('Errore server. Riprova tra un attimo.');
+                    data = await res.json();
+                } catch {
+                    const text = await res.text();
+                    if (text && text.includes('Page Expired')) {
+                        throw new Error('Sessione scaduta (419). Ricarica e riprova.');
                     }
-
-                    // Estrai il primo messaggio utile in caso di errore
-                    if (!res.ok || !data?.clientSecret) {
-                        const firstValidation =
-                            (data?.errors && Object.values(data.errors)[0]?.[
-                            0]) // primo errore Laravel (422)
-                            ||
-                            data?.message // messaggio Laravel
-                            ||
-                            data?.error // nostro messaggio lato server
-                            ||
-                            'Errore in checkout.';
-                        throw new Error(firstValidation);
-                    }
-
-                    clientSecret = data.clientSecret;
-
-                    // 2) Monta Elements (solo la prima volta)
-                    if (!elements) {
-                        elements = stripe.elements({
-                            clientSecret
-                        });
-                        const paymentElement = elements.create('payment');
-                        paymentElement.mount('#payment-element');
-                    }
-
-                    // 3) Obbligatorio prima di confirmPayment: raccoglie/valida i dati di pagamento
-                    const {
-                        error: submitError
-                    } = await elements.submit();
-                    if (submitError) {
-                        throw submitError;
-                    }
-
-                    // 4) Conferma pagamento
-                    const {
-                        error
-                    } = await stripe.confirmPayment({
-                        elements,
-                        clientSecret,
-                        confirmParams: {
-                            return_url: "{{ route('order.thankyou') }}"
-                        }
-                    });
-
-                    if (error) {
-                        throw error;
-                    }
-                } catch (err) {
-                    errorEl.textContent = err?.message || 'Errore imprevisto.';
-                    payBtn.disabled = false;
+                    throw new Error('Errore server. Riprova tra poco.');
                 }
-            });
-        })();
-    </script>
+
+                if (!res.ok || !data?.clientSecret) {
+                    const firstValidation = (data?.errors && Object.values(data.errors)[0]?.[0]) ||
+                                            data?.message || data?.error || 'Errore in checkout.';
+                    throw new Error(firstValidation);
+                }
+
+                clientSecret = data.clientSecret;
+
+                elements = stripe.elements({ clientSecret, locale: 'it' });
+                const paymentElement = elements.create('payment', { wallets: { applePay: 'never' } });
+                paymentElement.mount('#payment-element');
+
+                phase = 'mounted';
+                payBtn.textContent = 'Paga ora';   // ora il secondo click conferma
+                setBusy(false);
+                return; // STOP qui: l'utente inserisce i dati carta
+            }
+
+            // 2) SECONDO CLICK → conferma pagamento
+            if (phase === 'mounted') {
+                setBusy(true);
+
+                // valida i campi del Payment Element
+                const { error: submitError } = await elements.submit();
+                if (submitError) throw submitError;
+
+                const { error } = await stripe.confirmPayment({
+                    elements,
+                    clientSecret,
+                    confirmParams: { return_url: returnUrl }
+                });
+
+                if (error) throw error;
+
+                phase = 'confirming';
+                setBusy(false);
+                return;
+            }
+        } catch (err) {
+            fail(err);
+        }
+    });
+})();
+</script>
+
 </body>
 
 </html>

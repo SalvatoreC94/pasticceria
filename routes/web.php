@@ -62,11 +62,12 @@ Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout.sho
 Route::post('/checkout/create-order', [CheckoutController::class, 'createOrder'])->name('checkout.create');
 
 // Webhook Stripe (invocabile)
-Route::post('/stripe/webhook', StripeWebhookController::class);
+Route::post('/stripe/webhook', StripeWebhookController::class)
+    ->name('stripe.webhook');
 
 
 // Thank you
-Route::view('/ordine/confermato', 'ordine-confermato')->name('order.thankyou');
+Route::view('/checkout/thank-you', 'checkout.thank-you')->name('order.thankyou');
 
 // Rotte di Breeze (login/registrazione)
 require __DIR__ . '/auth.php';

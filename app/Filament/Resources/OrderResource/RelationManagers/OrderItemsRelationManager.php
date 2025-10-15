@@ -14,10 +14,20 @@ class OrderItemsRelationManager extends RelationManager
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name')->label('Prodotto'),
-                Tables\Columns\TextColumn::make('price_cents')->label('Prezzo')->money('EUR', divideBy: 100),
-                Tables\Columns\TextColumn::make('qty')->label('Q.tà'),
-                Tables\Columns\TextColumn::make('line')->label('Riga')->state(fn ($r) => $r->price_cents * $r->qty)->money('EUR', divideBy: 100),
+                Tables\Columns\TextColumn::make('product_name_snapshot')
+                    ->label('Prodotto')
+                    ->formatStateUsing(fn ($record) =>
+                        $record->product_name_snapshot ?? optional($record->product)->name
+                    ),
+                Tables\Columns\TextColumn::make('unit_price_cents')
+                    ->label('Prezzo')
+                    ->money('EUR', divideBy: 100),
+                Tables\Columns\TextColumn::make('qty')
+                    ->label('Q.tà'),
+                Tables\Columns\TextColumn::make('total_cents')
+                    ->label('Riga')
+                    ->state(fn ($r) => $r->total_cents ?? ($r->unit_price_cents * $r->qty))
+                    ->money('EUR', divideBy: 100),
             ])
             ->headerActions([])
             ->actions([])
