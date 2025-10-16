@@ -5,76 +5,59 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ProductResource\Pages;
 use App\Models\Product;
 use Filament\Forms;
-use Filament\Forms\Form;
-use Filament\Forms\Set;
 use Filament\Tables;
-use Filament\Tables\Table;
 use Filament\Resources\Resource;
-use Illuminate\Support\Str;
 
 class ProductResource extends Resource
 {
     protected static ?string $model = Product::class;
     protected static ?string $navigationIcon = 'heroicon-o-cube';
-    protected static ?string $navigationGroup = 'Catalogo';
     protected static ?string $navigationLabel = 'Prodotti';
+    protected static ?string $pluralModelLabel = 'Prodotti';
+    protected static ?string $modelLabel = 'Prodotto';
 
-    public static function form(Form $form): Form
+    public static function form(Forms\Form $form): Forms\Form
     {
         return $form->schema([
-            Forms\Components\TextInput::make('name')
-                ->label('Nome')
-                ->required()
-                ->live()
-                ->afterStateUpdated(fn (string $state, Set $set) => $set('slug', Str::slug($state))),
-            Forms\Components\TextInput::make('slug')
-                ->label('Slug')
-                ->required()
-                ->unique(ignoreRecord: true),
-            Forms\Components\TextInput::make('sku')
-                ->label('SKU')
-                ->required()
-                ->unique(ignoreRecord: true),
-            Forms\Components\Textarea::make('description')->label('Descrizione'),
-            Forms\Components\TextInput::make('price_cents')
-                ->label('Prezzo (centesimi)')
-                ->numeric()
-                ->minValue(0)
-                ->required(),
-            Forms\Components\TextInput::make('stock_qty')
-                ->label('Q.tà')
-                ->numeric()
-                ->minValue(0)
-                ->required(),
-            Forms\Components\Toggle::make('is_visible')->label('Visibile')->default(true),
+            Forms\Components\TextInput::make('name')->label('Nome')->required()->maxLength(255),
+            Forms\Components\TextInput::make('slug')->label('Slug')->required()->maxLength(255),
+            Forms\Components\Textarea::make('description')->label('Descrizione')->rows(3),
 
-            // se 'images' è JSON nel db, questo va bene; se usi storage pubblico puoi aggiungere ->disk('public')->directory('products')
-            Forms\Components\FileUpload::make('images')
-                ->label('Immagini')
-                ->image()
-                ->multiple(),
+            Forms\Components\TextInput::make('price_cents')
+                ->label('Prezzo (cent)')
+                ->numeric()->required()->minValue(0),
+
+            Forms\Components\TextInput::make('sku')
+                ->label('SKU')->required()->maxLength(50),
+
+            Forms\Components\TextInput::make('stock')
+                ->label('Stock')->numeric()->required()->minValue(0),
+
+            Forms\Components\Toggle::make('is_visible')->label('Visibile')->default(true),
 
             Forms\Components\Select::make('categories')
                 ->label('Categorie')
                 ->relationship('categories', 'name')
                 ->multiple()
-                ->preload(),
-        ])->columns(3);
+                ->preload()
+                ->searchable(),
+        ]);
     }
 
-    public static function table(Table $table): Table
+    public static function table(Tables\Table $table): Tables\Table
     {
-        return $table->columns([
-                Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('sku')->toggleable(),
-                Tables\Columns\TextColumn::make('price_cents')->money('EUR', divideBy: 100)->label('Prezzo')->sortable(),
-                Tables\Columns\TextColumn::make('stock_qty')->label('Q.tà')->sortable(),
-                Tables\Columns\IconColumn::make('is_visible')->boolean()->label('Vis.'),
-                Tables\Columns\TextColumn::make('categories.name')->label('Categorie')->limit(30),
-                Tables\Columns\TextColumn::make('updated_at')->dateTime('d/m/Y H:i')->label('Agg.'),
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('name')->label('Nome')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('sku')->label('SKU')->sortable(),
+                Tables\Columns\TextColumn::make('price_cents')->label('Prezzo (cent)')->sortable(),
+                Tables\Columns\TextColumn::make('stock')->label('Stock')->sortable(),
+                Tables\Columns\IconColumn::make('is_visible')->label('Visibile')->boolean(),
             ])
-            ->actions([Tables\Actions\EditAction::make()])
-            ->bulkActions([Tables\Actions\DeleteBulkAction::make()]);
+            ->actions([
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
+            ]);
     }
 
     public static function getPages(): array

@@ -2,17 +2,26 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['name','slug','is_visible'];
-    protected $casts = ['is_visible' => 'boolean'];
+    protected $fillable = [
+        'name',
+        'slug',
+        'description',
+        'is_visible',
+    ];
 
-    public function products() {
-        return $this->belongsToMany(Product::class)->withTimestamps();
+    protected $casts = [
+        'is_visible' => 'boolean',
+    ];
+
+    public function products()
+    {
+        return $this->belongsToMany(Product::class);
     }
 }

@@ -56,7 +56,7 @@ class StripeWebhookController extends Controller
                     if ($type === 'payment_intent.succeeded') {
                         $order->update([
                             'payment_status' => 'paid',
-                            'order_status'   => 'processing',
+                            'order_status'   => 'preparing',
                         ]);
                     } else {
                         $order->update(['payment_status' => 'failed']);
@@ -73,8 +73,9 @@ class StripeWebhookController extends Controller
                 $order = Order::where('stripe_payment_intent', $intentId)->first();
                 if ($order) {
                     $order->update([
-                        'payment_status' => 'paid',
-                        'order_status'   => 'processing',
+                        'order_status' => Order::STATUS_PREPARING,
+'payment_status' => Order::PAY_PAID,
+
                     ]);
                 }
             }

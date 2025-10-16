@@ -70,7 +70,7 @@ class StripeWebhookController extends Controller
                     if ($type === 'payment_intent.succeeded') {
                         $order->update([
                             'payment_status' => 'paid',
-                            'order_status'   => 'processing',
+                            'order_status'   => 'preparing',
                         ]);
                         Log::info("Stripe: ordine {$order->code} aggiornato a paid/processing");
                     } else {
@@ -99,8 +99,9 @@ class StripeWebhookController extends Controller
 
                 if ($order) {
                     $order->update([
-                        'payment_status' => 'paid',
-                        'order_status'   => 'processing',
+                        'order_status' => Order::STATUS_PREPARING,
+                         'payment_status' => Order::PAY_PAID,
+
                     ]);
                     Log::info("Stripe: ordine {$order->code} aggiornato da checkout.session a paid/processing");
                 } else {

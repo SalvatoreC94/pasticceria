@@ -3,9 +3,12 @@
 namespace App\Filament\Resources\OrderResource\Pages;
 
 use App\Filament\Resources\OrderResource;
+use App\Models\Order;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Actions;
-use Stripe\StripeClient;
+use Filament\Notifications\Notification;
+use Stripe\Stripe;
+use Stripe\PaymentIntent;
 
 class EditOrder extends EditRecord
 {
@@ -16,29 +19,54 @@ class EditOrder extends EditRecord
         return [
             Actions\Action::make('syncStripe')
                 ->label('Sincronizza con Stripe')
-                ->action(function () {
-                    $record = $this->record; // Order
-                    if (!$record->stripe_payment_intent) {
-                        $this->notify('warning', 'Nessun PaymentIntent associato.');
-                        return;
-                    }
-                    $secret = config('services.stripe.secret', env('STRIPE_SECRET'));
-                    $stripe = new StripeClient($secret);
-                    $pi = $stripe->paymentIntents->retrieve($record->stripe_payment_intent);
-
-                    if ($pi->status === 'succeeded') {
-                        $record->update([
-                            'payment_status' => 'paid',
-                            'order_status'   => 'processing',
-                        ]);
-                        $this->notify('success', 'Ordine aggiornato a paid/processing.');
-                    } elseif (in_array($pi->status, ['requires_payment_method', 'canceled'])) {
-                        $record->update(['payment_status' => 'failed']);
-                        $this->notify('danger', 'Pagamento fallito/cancellato.');
-                    } else {
-                        $this->notify('info', 'Stato Stripe: ' . $pi->status);
-                    }
-                }),
+                ->icon('heroicon-o-arrow-path')
+                ->requiresConfirmation()
+                ->color('primary')
+                ->action(fn () => $this->syncWithStripe()),
         ];
+    }
+
+    protected function syncWithStripe(): void
+    {
+        try {
+            /** @var \App\Models\Order $order */
+            $order = $this->record;
+
+            if (! $order->stripe_payment_intent) {
+                Notification::make()
+                    ->title('Nessun pagamento Stripe associato')
+                    ->warning()
+                    ->send();
+                return;
+            }
+
+            Stripe::setApiKey(config('services.stripe.secret'));
+            $intent = PaymentIntent::retrieve($order->stripe_payment_intent);
+
+            if ($intent && $intent->status === 'succeeded') {
+                $order->update([
+                    'payment_status' => Order::PAY_PAID,
+                    'order_status'   => Order::STATUS_PREPARING, // niente più "processing"
+                ]);
+
+                Notification::make()
+                    ->title('Ordine sincronizzato con Stripe')
+                    ->body('Pagamento confermato. Stato aggiornato a "preparing".')
+                    ->success()
+                    ->send();
+            } else {
+                Notification::make()
+                    ->title('Pagamento non completato')
+                    ->body('Stripe non ha confermato il pagamento per questo ordine.')
+                    ->warning()
+                    ->send();
+            }
+        } catch (\Throwable $e) {
+            Notification::make()
+                ->title('Errore di sincronizzazione')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
     }
 }

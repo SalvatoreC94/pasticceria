@@ -57,6 +57,8 @@ Route::prefix('carrello')->group(function () {
         ->name('cart.remove');
     Route::get('/', [CartController::class, 'show'])->name('cart.show');
 });
+// Fix: alias per route 'dashboard' (usata da Breeze)
+Route::redirect('/dashboard', '/catalogo')->name('dashboard');
 
 Route::get('/checkout', [CheckoutController::class, 'show'])->name('checkout.show');
 Route::post('/checkout/create-order', [CheckoutController::class, 'createOrder'])->name('checkout.create');

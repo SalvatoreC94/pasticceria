@@ -68,21 +68,22 @@ class OrderResource extends Resource
                     ])
                     ->required(),
 
-                Forms\Components\Select::make('order_status')
-                    ->label('Stato ordine')
-                    ->options([
-                        'new'        => 'new',
-                        'processing' => 'processing',
-                        'shipped'    => 'shipped',
-                        'delivered'  => 'delivered',
-                        'canceled'   => 'canceled',
-                    ])
-                    ->required(),
+           Forms\Components\Select::make('order_status')
+    ->label('Stato ordine')
+    ->options([
+        'pending'   => 'pending',
+        'preparing' => 'preparing',
+        'shipped'   => 'shipped',
+        'completed' => 'completed',
+        'cancelled' => 'cancelled',
+    ])
+    ->required(),
+
 
                 Forms\Components\TextInput::make('courier_name')->label('Corriere'),
                 Forms\Components\TextInput::make('tracking_code')->label('Tracking'),
                 Forms\Components\TextInput::make('stripe_payment_intent')->label('Stripe PI')->disabled(),
-            ])->columns(2),
+            ])->columns(2)
         ]);
     }
 
@@ -106,12 +107,12 @@ class OrderResource extends Resource
                 Tables\Columns\TextColumn::make('order_status')->label('Stato')
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
-                        'new'        => 'warning',
-                        'processing' => 'info',
-                        'shipped'    => 'primary',
-                        'delivered'  => 'success',
-                        'canceled'   => 'danger',
-                        default      => 'gray',
+                        'pending'   => 'warning',
+                        'preparing' => 'info',
+                        'shipped'   => 'primary',
+                        'completed' => 'success',
+                        'cancelled' => 'danger',
+                        default     => 'gray',
                     })
                     ->sortable(),
                 Tables\Columns\TextColumn::make('created_at')->dateTime('d/m/Y H:i')->label('Creato')->sortable(),
@@ -133,6 +134,7 @@ class OrderResource extends Resource
         return [
             'index' => Pages\ListOrders::route('/'),
             'edit'  => Pages\EditOrder::route('/{record}/edit'),
+            
         ];
     }
 }
